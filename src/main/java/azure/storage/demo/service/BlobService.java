@@ -1,17 +1,17 @@
 package azure.storage.demo.service;
 
 import azure.storage.demo.config.AzureStorageConfiguration;
+import azure.storage.demo.entity.AppRegistryCredentials;
+import com.azure.core.credential.AccessToken;
+import com.azure.core.credential.TokenRequestContext;
+import com.azure.identity.ClientSecretCredential;
 import com.azure.storage.blob.*;
-import com.azure.storage.blob.models.UserDelegationKey;
-import com.azure.storage.blob.sas.BlobSasPermission;
-import com.azure.storage.blob.sas.BlobServiceSasSignatureValues;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayInputStream;
-import java.io.InputStream;
-import java.time.OffsetDateTime;
+import java.util.concurrent.ExecutionException;
 
 
 @Service
@@ -19,22 +19,32 @@ import java.time.OffsetDateTime;
 @Slf4j
 public class BlobService {
 
-    BlobServiceClient blobServiceClient;
-
     AzureStorageConfiguration azureStorageConfiguration;
 
-    public void uploadBlob(String container, String blobName, byte[] data) {
-        BlobClient blobClient = getBlobClient(container, blobName);
-
+    public void uploadBlob(String token, String container, String blobName, byte[] data) {
+        log.info("Try Upload in: {}", container);
+        BlobClient blobClient = getBlobClient(token, container, blobName);
         blobClient.upload(new ByteArrayInputStream(data), data.length, true);
+        log.info("Uploaded");
     }
 
-    public BlobClient getBlobClient(String container, String blobName) {
-        BlobContainerClient blobContainerClient = getBlobContainerClient(container);
-        return blobContainerClient.getBlobClient(blobName);
+    public BlobClient getBlobClient(String token, String container, String blobName) {
+
+        BlobServiceClient blobServiceClient = token == null ?
+                azureStorageConfiguration.getBlobServiceClient() :
+                azureStorageConfiguration.getBlobServiceClient(token);
+
+        return blobServiceClient.getBlobContainerClient(container).getBlobClient(blobName);
     }
 
-    public BlobContainerClient getBlobContainerClient(String container) {
-        return blobServiceClient.getBlobContainerClient(container);
+    public String auth(AppRegistryCredentials credentials) throws ExecutionException, InterruptedException {
+
+        TokenRequestContext requestContext = new TokenRequestContext().addScopes("https://storage.azure.com/.default");
+
+        ClientSecretCredential credential = azureStorageConfiguration.generateClientSecretCredential(credentials.getClientId(), credentials.getClientSecret());
+
+        AccessToken token = credential.getToken(requestContext).toFuture().get();
+
+        return token.getToken();
     }
 }
